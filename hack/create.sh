@@ -1,6 +1,10 @@
 #!/bin/bash
 
-rm -Rf auth tls terraform.* install-config.yaml metadata.json .openshift_install* *.ign
+
+#wget -O yq https://github.com/mikefarah/yq/releases/download/v4.25.3/yq_linux_amd64
+#chmod +x yq
+
+rm -Rf auth tls terraform.* install-config.yaml metadata.json .openshift_install* *.ign bootstrap.iso
 
 cp install-config{-backup-dev,}.yaml
 
@@ -14,4 +18,15 @@ RHCOS_OVA_URL=$(../openshift-install coreos print-stream-json | jq -r '.architec
 wget -O rhcos.iso ${RHCOS_ISO_URL}
 wget -O rhcos.ova ${RHCOS_OVA_URL}
 
+
+# TODO: replace this with some sort of injection...
+# since there are versions in the ovf.
+
+# replace coreos.ovf with modified
+tar --delete -vf rhcos.ova coreos.ovf
+tar -vuf rhcos.ova coreos.ovf
+
+
+
 podman run --security-opt label=disable --pull=always --rm -v .:/data -w /data quay.io/coreos/coreos-installer:release iso ignition embed -i /data/bootstrap.ign /data/rhcos.iso -o /data/bootstrap.iso
+

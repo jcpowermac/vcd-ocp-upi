@@ -1,0 +1,73 @@
+variant: fcos 
+version: 1.3.0 
+passwd:
+  users:
+    - name: core
+      ssh_authorized_keys:
+        - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCbXCby9r69mn+lGn7/mjZRkr+ShGWmVcXT4pbwA8IJBkjJg/EtXFuL1VjP5QbbWvjakQ1ZpMEYkL4V1Gm1etzkoDuMV+VhvvL8uW59XezLH1My9RQ5vtXY7GpB3t4qbTX2AQ5abAlTAoRgOxr5mKT62m3uUpU6HBWkcqwhNGRNPQOhUBybbpxMyakJ/TyS5F7GOajsCWdhx3ErldXrtUgbArPwR16Nh0lA3jO81QJnKzbkcaVlCNd8A3to0Dx1g5cel2HDK37Ri6xYZssh1qGN+fecc7Gf4lqvp1gGMtKMyZw8t54/cJrSeVhzi+mq8aeTIaOAwpoa8C4H80HE35wog1tsS0WALlPdNZ8IyPZRfhH3iG12X0WttB5x2hHngQaYzSWzs1TvEGwrci1Y8EFE1xXG6ArAPG5Iy79tmXlOZM/R/D1K6oVRrVB6T4fWKtHFHJExlRI6HWT+Qxye96RPWxEdKEhWzOLRrBiWPSXYCtT4SCbBirP4C/htnDNcMGlT/HIETVf0R+ixjnsqeYYQn15cXvWSSDQ4LTnW9vBrDLsWVFV8hJ4outZ67Ztf/tBuGKfUFzLkTCFhWJER1bbH7Zhxn5xCplI4REr2+PKnhRaPCrz6W2TRO94pACkJG3M4eP3OyCbVfC1N1c0+MPwwJ0R7TAllli94t5jQthu8xw==
+
+systemd:
+  units:
+    - name: knotc.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=configures knot dns
+        ConditionPathExists=!/srv/knot/storage
+        After=network-online.target
+        Before=knot.service
+
+        [Service]
+        Type=oneshot
+        ExecStartPre=/usr/bin/podman pull quay.io/jcallen/knot 
+        ExecStartPre=/usr/bin/mkdir -p $${KNOT_STORAGE_PATH} 
+        ExecStartPre=/usr/bin/mkdir -p $${KNOT_RUNDIR_PATH}
+        ExecStartPre=/usr/bin/podman run --rm -v $${KNOT_STORAGE_PATH}:/storage:z -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-init
+        ExecStart=/usr/bin/podman run --name knot --rm -v $${KNOT_STORAGE_PATH}:/storage:z -v $${KNOT_RUNDIR_PATH}:/rundir:z --network host -d quay.io/jcallen/knot knotd
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-begin 
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-set 'server.listen' '0.0.0.0@53'
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-set 'acl[update-acl]'
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-set 'acl[update-acl].address' '${acl_ip_address}'
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-set 'acl[update-acl].action' 'update'
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-set 'zone[${domain}]'
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-set 'zone[${domain}].acl' 'update-acl'
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-set 'remote[hidden]'
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-set 'remote[hidden].address' '1.1.1.1'
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-set 'mod-dnsproxy[default]'
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-set 'mod-dnsproxy[default].remote' 'hidden'
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-set 'mod-dnsproxy[default].fallback' 'on'
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-set 'template[default]'
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-set 'template[default].global-module' 'mod-dnsproxy/default'
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-commit 
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc zone-begin ${domain} 
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc zone-set ${domain} @ 7200 SOA ns hostmaster 1 86400 900 691200 3600 
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc zone-set ${domain} ns 3600 A ${dns_server_ip_address} 
+        ExecStart=/usr/bin/podman run --rm -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc zone-commit ${domain} 
+        ExecStartPost=/usr/bin/podman stop knot
+        Environment="KNOT_STORAGE_PATH=/srv/knot/storage"
+        Environment="KNOT_RUNDIR_PATH=/srv/knot/rundir"
+        
+        [Install]
+        WantedBy=network-online.target
+    - name: knot.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Knot DNS server
+        Wants=network-online.target
+        After=network-online.target
+        Documentation=man:knotd(8) man:knot.conf(5) man:knotc(8)
+        
+        [Service]
+        Type=forking
+        ExecStartPre=/usr/bin/podman pull quay.io/jcallen/knot 
+        ExecStartPre=/usr/bin/podman run --rm -v $${KNOT_STORAGE_PATH}:/storage:z -v $${KNOT_RUNDIR_PATH}:/rundir:z quay.io/jcallen/knot knotc conf-check
+        ExecStart=/usr/bin/podman run --name knot --rm -v $${KNOT_STORAGE_PATH}:/storage:z -v $${KNOT_RUNDIR_PATH}:/rundir:z --network host -d quay.io/jcallen/knot knotd -m "$${KNOT_CONF_MAX_SIZE}"
+        ExecStop=/usr/bin/podman stop -t 10 knot 
+        Environment="KNOT_ZONE_LOAD_TIMEOUT_SEC=180"
+        Environment="KNOT_CONF_MAX_SIZE=512"
+        Environment="KNOT_STORAGE_PATH=/srv/knot/storage"
+        Environment="KNOT_RUNDIR_PATH=/srv/knot/rundir"
+        
+        [Install]
+        WantedBy=multi-user.target
